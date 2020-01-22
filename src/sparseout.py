@@ -3,6 +3,7 @@ from torch.autograd import Variable
 from torch.nn.modules import Module
 
 import torch
+EPSILON=1E-32
 class Sparseout(InplaceFunction):
     
     @staticmethod
@@ -58,7 +59,7 @@ class Sparseout(InplaceFunction):
     def backward(ctx, grad_output):
         if ctx.p > 0 and ctx.train:
             with torch.no_grad():
-                tmp = torch.mul( ctx.q/2.0, ctx.input.abs().pow((ctx.q/2.0)-1.))
+                tmp = torch.mul( ctx.q/2.0, ctx.input.abs().add(EPSILON).pow((ctx.q/2.0)-1.))
                 tmp = tmp.mul(ctx.noise)
                 tmp = tmp.mul(torch.sign(ctx.input))
                 if hasattr(ctx, 'targeting_mask'):
