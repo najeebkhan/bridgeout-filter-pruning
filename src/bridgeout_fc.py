@@ -38,14 +38,17 @@ class BridgeoutFcLayer(Module):
             out_features,
             p=0.5,
             q=2.0,
+            target_fraction=1.0,
             bias=True,
             batch_mask=False,
             unit_test_mode=False):
         super(BridgeoutFcLayer, self).__init__()
         self.p=p
         self.q=q / 2.0
+        self.target_fraction = target_fraction
         self.in_features = in_features
         self.out_features = out_features
+        
         
         self.unit_test_mode = unit_test_mode
         
@@ -70,15 +73,15 @@ class BridgeoutFcLayer(Module):
         if self.bias is not None:
             self.bias.data.uniform_(-stdv, stdv, generator=self.rand_gen)
 
-    def forward(self, input):
+    def forward(self, input_x):
         if self.training:
             if self.unit_test_mode:
                 self.rand_gen.manual_seed(0)           
             
-            bS, inpS = input.size()
+            bS, inpS = input_x.size()
             outS = self.weight.size()[1]
             
-            input = input.view(bS,1,inpS)
+            input_x = input_x.view(bS,1,inpS)
             if not self.use_same_mask:
                 w = self.weight.expand(bS, inpS, outS)
             else:
@@ -89,17 +92,28 @@ class BridgeoutFcLayer(Module):
             
             noise = w.data.clone()
             noise.bernoulli_(1 - self.p, generator=self.rand_gen).div_(1 - self.p).sub_(1)
-            w = w.add(wq.mul(Variable(noise)))
             
+            targeting_mask = 1.0            
+            if self.target_fraction < 1.0:
+                w_shape = w.size()
+                w_flattened_abs = torch.abs(w.view([w_shape[0], -1]))
+                sorted_indices = torch.argsort(w_flattened_abs, dim=1)
+                n = int(sorted_indices.size()[1]*self.target_fraction)
+                threshold_values = w_flattened_abs.gather(1,sorted_indices)[:,n].view([-1,1])
+                targeting_mask = w_flattened_abs.le(threshold_values).view(w_shape).type(w.dtype)
+            
+                
+            
+            w = w.add( wq.mul(Variable(noise)).mul(targeting_mask) )
             if self.bias is not None:
-                output = input.matmul(w).view(bS,outS).add(self.bias)
+                output = input_x.matmul(w).view(bS,outS).add(self.bias)
             else:
-                output = input.matmul(w).view(bS,outS)
+                output = input_x.matmul(w).view(bS,outS)
         else:
             if self.bias is not None:
-                output = input.matmul(self.weight).add(self.bias)
+                output = input_x.matmul(self.weight).add(self.bias)
             else:
-                output = input.matmul(self.weight)
+                output = input_x.matmul(self.weight)
         
         return output
 
@@ -110,15 +124,15 @@ class BridgeoutFcLayer(Module):
 
 
 if __name__ == '__main__':
-    b = BridgeoutFcLayer(2,2, batch_mask=False).double()
+    b = BridgeoutFcLayer(2,2, batch_mask=False, target_fraction=0.75, unit_test_mode=True).double()
     x = Variable(torch.ones(5, 2).double(), requires_grad=True)
     y = b(x)
     y.backward(torch.ones(y.size()).double())
-    [print('p, p.grad', n, p.grad) for n, p in b.named_parameters()]
+#     [print('p, p.grad', n, p.grad) for n, p in b.named_parameters()]
     print(y)
-    b.zero_grad()
-    y = b(x)
-    y.backward(torch.ones(y.size()).double())
-    [print('p, p.grad', n, p.grad) for n, p in b.named_parameters()]
-    print(y)
+#     b.zero_grad()
+#     y = b(x)
+#     y.backward(torch.ones(y.size()).double())
+#     [print('p, p.grad', n, p.grad) for n, p in b.named_parameters()]
+#     print(y)
     
