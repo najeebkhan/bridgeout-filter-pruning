@@ -1,5 +1,5 @@
 from sto_reg.tests.net_training.cnn import LeNet5
-from sto_reg.src.pruner import MagnitudePruner
+from sto_reg.src.pruner import MagnitudePruner, UnitPruner
 import torch
 import unittest
 
@@ -9,16 +9,28 @@ class TestsPruning(unittest.TestCase):
         self.net = LeNet5({'name':'LeNet5', 'drop_rate':0.5}).cuda()
          
     def test_magnitude_pruning(self):
-        FRACTION_PRUNED = 0.86
+        FRACTION_PRUNED = 0.64
         mag_pruner = MagnitudePruner(exclude_final=False)
         mag_pruner.apply(self.net, FRACTION_PRUNED)
+         
+        non_zero_fraction = self.get_non_zero_fraction()
+         
+        for name, fraction in non_zero_fraction.items():
+            if 'weight' in name:
+                print(name)
+                self.assertAlmostEqual(fraction, 1-FRACTION_PRUNED, places=2)
+#                 
+    def test_unit_pruning(self):
+        FRACTION_PRUNED = 0.35
+        unit_pruner = UnitPruner(exclude_final=False)
+        unit_pruner.apply(self.net, FRACTION_PRUNED)
         
         non_zero_fraction = self.get_non_zero_fraction()
         
         for name, fraction in non_zero_fraction.items():
             if 'weight' in name:
-                print(name)
-                self.assertAlmostEqual(fraction, 1-FRACTION_PRUNED, places=3)
+                print(name, 'non zeor fraction', fraction)
+#                 self.assertAlmostEqual(fraction, 1-FRACTION_PRUNED, places=3)
 
     def get_non_zero_fraction(self):
         non_zero_count = {}

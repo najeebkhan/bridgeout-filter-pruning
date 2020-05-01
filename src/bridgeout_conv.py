@@ -153,13 +153,13 @@ class BridgeoutConvLayer(_ConvNd):
             self.dropout = DO(p=p, target_fraction=target_fraction, unit_test_mode=unit_test_mode)
         
     @weak_script_method
-    def forward(self, input):
+    def forward(self, input_x):
         if hasattr(self, 'dropout'):
             w = self.dropout(self.weight)
-            return F.conv2d(input, w, self.bias, self.stride,
+            return F.conv2d(input_x, w, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
         else:
-            return F.conv2d(input, self.weight, self.bias, self.stride,
+            return F.conv2d(input_x, self.weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
         
         

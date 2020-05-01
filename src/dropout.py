@@ -9,7 +9,7 @@ class Dropout(InplaceFunction):
         return input.new().resize_as_(input)
 
     @classmethod
-    def forward(cls, ctx, input, drop_rate=0.5, target_fraction=1.0, train=False, inplace=False, unit_test_mode=False):
+    def forward(cls, ctx, input_x, drop_rate=0.5, target_fraction=1.0, train=False, inplace=False, unit_test_mode=False):
         rand_gen = torch.Generator()
         if unit_test_mode:
             rand_gen.manual_seed(353)
@@ -21,29 +21,29 @@ class Dropout(InplaceFunction):
         ctx.p = drop_rate
         ctx.train = train
         ctx.inplace = inplace
-        ctx.input = input
+        ctx.input = input_x
         
         if ctx.inplace:
-            ctx.mark_dirty(input)
-            output = input
+            ctx.mark_dirty(input_x)
+            output = input_x
         else:
-            output = input.clone()
+            output = input_x.clone()
 
         if ctx.p > 0 and ctx.train:
-            ctx.noise = cls._make_noise(input)
+            ctx.noise = cls._make_noise(input_x)
             if ctx.p == 1:
                 ctx.noise.fill_(0)
             else:
                 ctx.noise.bernoulli_(1 - ctx.p, generator=rand_gen).div_(1 - ctx.p)
             
             if target_fraction < 1.0:
-                input_shape = input.size()
-                input_flattened_abs = torch.abs(input.view([input_shape[0], -1]))
+                input_shape = input_x.size()
+                input_flattened_abs = torch.abs(input_x.view([input_shape[0], -1]))
                 sorted_indices = torch.argsort(input_flattened_abs, dim=1)
                 n = int(sorted_indices.size()[1]*target_fraction)
                 threshold_values = input_flattened_abs.gather(1,sorted_indices)[:,n].view([-1,1])
                 targetting_mask = input_flattened_abs.le(threshold_values).view(input_shape)
-                ctx.noise = ctx.noise.where(targetting_mask, torch.tensor([1.0]).type(input.dtype).to(input.device))            
+                ctx.noise = ctx.noise.where(targetting_mask, torch.tensor([1.0]).type(input_x.dtype).to(input_x.device))            
             output.mul_(ctx.noise)
         return output
 
@@ -101,8 +101,8 @@ class DO(Module):
         self.unit_test_mode = unit_test_mode
         self.target_fraction=target_fraction
 
-    def forward(self, input):
-        return dropout(input, self.p, self.target_fraction, self.training, self.inplace, self.unit_test_mode)
+    def forward(self, input_x):
+        return dropout(input_x, self.p, self.target_fraction, self.training, self.inplace, self.unit_test_mode)
 
     def __repr__(self):
         inplace_str = ', inplace' if self.inplace else ''

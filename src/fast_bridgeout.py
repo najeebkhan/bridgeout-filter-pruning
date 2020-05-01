@@ -32,16 +32,16 @@ class FastBridgeout(nn.Module):
             nn.init.uniform_(self.bias, -bound, bound)
 
 
-    def forward(self, input):
+    def forward(self, input_x):
         if self.unit_test_mode:
             seed = 979
             torch.manual_seed(seed)
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
-        mean_out = input.mm(self.weight.t())
+        mean_out = input_x.mm(self.weight.t())
         mean_out += self.bias.unsqueeze(0).expand_as(mean_out)
 
-        tmp = input.pow(2).mul((1 - self.keep_prob)/self.keep_prob)
+        tmp = input_x.pow(2).mul((1 - self.keep_prob)/self.keep_prob)
         variance_out = tmp.mm(torch.abs(self.weight.t())**self.bo_norm)
         
         r = mean_out.div(variance_out)

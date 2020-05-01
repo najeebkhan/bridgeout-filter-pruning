@@ -11,7 +11,7 @@ class Sparseout(InplaceFunction):
         return input.new().resize_as_(input)
 
     @classmethod
-    def forward(cls, ctx, input, drop_rate=0.5, so_norm=2.0, target_fraction=1.0, train=False, inplace=False, unit_test_mode=False):
+    def forward(cls, ctx, input_x, drop_rate=0.5, so_norm=2.0, target_fraction=1.0, train=False, inplace=False, unit_test_mode=False):
         rand_gen = torch.Generator()
         if unit_test_mode:
             rand_gen.manual_seed(353)
@@ -25,30 +25,30 @@ class Sparseout(InplaceFunction):
         ctx.q = so_norm
         ctx.train = train
         ctx.inplace = inplace
-        ctx.input = input
+        ctx.input = input_x
         
         if ctx.inplace:
-            ctx.mark_dirty(input)
-            output = input
+            ctx.mark_dirty(input_x)
+            output = input_x
         else:
-            output = input.clone()
+            output = input_x.clone()
 
         if ctx.p > 0 and ctx.train:
-            ctx.noise = cls._make_noise(input)
+            ctx.noise = cls._make_noise(input_x)
             if ctx.p == 1:
                 ctx.noise.fill_(0)
                 ctx.perturbation = ctx.noise
             else:
                 ctx.noise.bernoulli_(1 - ctx.p, generator=rand_gen).div_(1 - ctx.p).sub_(1)
-                ctx.perturbation = input.abs().pow((ctx.q)/2.0).mul(ctx.noise)
+                ctx.perturbation = input_x.abs().pow((ctx.q)/2.0).mul(ctx.noise)
             
             if target_fraction < 1.0:
-                input_shape = input.size()
-                input_flattened_abs = torch.abs(input.view([input_shape[0], -1]))
+                input_shape = input_x.size()
+                input_flattened_abs = torch.abs(input_x.view([input_shape[0], -1]))
                 sorted_indices = torch.argsort(input_flattened_abs, dim=1)
                 n = int(sorted_indices.size()[1]*target_fraction)
                 threshold_values = input_flattened_abs.gather(1,sorted_indices)[:,n].view([-1,1])
-                ctx.targeting_mask = input_flattened_abs.le(threshold_values).view(input_shape).type(input.dtype)
+                ctx.targeting_mask = input_flattened_abs.le(threshold_values).view(input_shape).type(input_x.dtype)
                 ctx.perturbation.mul_(ctx.targeting_mask)
                         
             output.add_(ctx.perturbation)
@@ -117,8 +117,8 @@ class SO(Module):
         self.unit_test_mode = unit_test_mode
         self.target_fraction=target_fraction
 
-    def forward(self, input):
-        return sparseout(input, self.p, self.q, self.target_fraction, self.training, self.inplace, self.unit_test_mode)
+    def forward(self, input_x):
+        return sparseout(input_x, self.p, self.q, self.target_fraction, self.training, self.inplace, self.unit_test_mode)
 
     def __repr__(self):
         inplace_str = ', inplace' if self.inplace else ''

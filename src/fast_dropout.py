@@ -33,15 +33,15 @@ class FastDropout(nn.Module):
             init.uniform_(self.bias, -bound, bound)
 
 
-    def forward(self, input):
+    def forward(self, input_x):
         if self.unit_test_mode:
             seed = 979
             torch.manual_seed(seed)
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
-        mean_out = input.mm(self.weight.t())
+        mean_out = input_x.mm(self.weight.t())
         mean_out += self.bias.unsqueeze(0).expand_as(mean_out)
-        tmp = self.keep_prob * (1 - self.keep_prob)* input**2
+        tmp = self.keep_prob * (1 - self.keep_prob)* input_x**2
         variance_out = tmp.mm(self.weight.t()**2)
         
         r = mean_out / variance_out

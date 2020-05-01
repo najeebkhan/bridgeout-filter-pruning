@@ -86,10 +86,9 @@ class BridgeoutFcLayer(Module):
                 w = self.weight.expand(bS, inpS, outS)
             else:
                 w = self.weight
-            
-            
-            wq = torch.abs( w ).pow( self.q )
-            
+            # not sure why this 1e-15 is needed? but lstm models are giving nans for q < 2 without it
+            wq = torch.abs( w ).add(1e-15).pow( self.q ) 
+                        
             noise = w.data.clone()
             noise.bernoulli_(1 - self.p, generator=self.rand_gen).div_(1 - self.p).sub_(1)
             
