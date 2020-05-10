@@ -3,7 +3,7 @@ import torch
 from torch.autograd import Variable
 from torch.nn.parameter import Parameter
 from torch.nn.modules import Module
-from sto_reg.src.sparseout import sparseout
+from sto_reg.src.sparseout import SO
 
 class BridgeoutBatchFcLayer(Module):
     r"""Applies the brigdeout transformation to the incoming data: :math:`y = Bx + b`
@@ -50,6 +50,7 @@ class BridgeoutBatchFcLayer(Module):
         self.p = p
         self.q = q
         self.tf=target_fraction
+        self.dropout = SO(self.p, self.q, self.tf)
         
 #         if q:
 #             self.dropout = SO(p=p, q=q, target_fraction=target_fraction, unit_test_mode=unit_test_mode)
@@ -79,9 +80,9 @@ class BridgeoutBatchFcLayer(Module):
             outS = self.weight.size()[1]
             
             if self.bias is not None:
-                output = input_x.matmul(sparseout(self.weight, self.p, self.q, self.tf)).view(bS,outS).add(self.bias)
+                output = input_x.matmul(self.dropout(self.weight)).view(bS,outS).add(self.bias)
             else:
-                output = input_x.matmul(sparseout(self.weight, self.p, self.q, self.tf)).view(bS,outS)
+                output = input_x.matmul(self.dropout(self.weight)).view(bS,outS)
         else:
             if self.bias is not None:
                 output = input_x.matmul(self.weight).add(self.bias)
