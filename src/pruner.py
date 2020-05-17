@@ -32,6 +32,43 @@ class MagnitudePruner:
             weight_flattened.mul_(mask.float())
 
 
+class MagnitudePrunerLayers:
+    @staticmethod
+    def is_param_weight_and_not_bias(param_name, eligible_layers):
+        result = False
+        for l in eligible_layers:
+            if l in param_name:
+                result = True
+                break
+        return result and 'bias' not in param_name
+    
+    @staticmethod
+    def get_eligible_params(net, eligible_layers):
+        weights = []
+        for param_name, param in net.named_parameters():
+            if MagnitudePrunerLayers.is_param_weight_and_not_bias(param_name, eligible_layers):
+                weights.append(param)
+        return weights
+    
+    @staticmethod
+    def apply(net, fraction, eligible_layers):
+        weights = MagnitudePrunerLayers.get_eligible_params(net, eligible_layers)
+        with torch.no_grad():
+            for weight in weights:
+                MagnitudePrunerLayers.prune(weight, fraction)
+                
+    @staticmethod
+    def prune(weight, fraction):
+            w_shape = weight.size()
+            weight_flattened = weight.view([w_shape[0], -1])
+            weight_flattened_abs = torch.abs(weight_flattened)
+            sorted_indices = torch.argsort(weight_flattened_abs, dim=1)
+            n = int(sorted_indices.size()[1]*fraction)
+            threshold_values = weight_flattened_abs.gather(1,sorted_indices)[:,n].view([-1,1])
+            mask = weight_flattened_abs.ge(threshold_values)
+            weight_flattened.mul_(mask.float())
+
+
 class MagnitudePrunerLSTM:
     @staticmethod
     def is_param_weight_and_not_bias(param_name):
