@@ -37,14 +37,16 @@ class GroupBridgeoutFcLayer(Module):
             in_features,
             out_features,
             p=0.5,
-            q=2.0,
+            q1=2.0,
+            q2=2.0,
             target_fraction=1.0,
             bias=True,
             batch_mask=False,
             unit_test_mode=False):
         super(GroupBridgeoutFcLayer, self).__init__()
         self.p=p
-        self.q=q / 2.0
+        self.q=q1 / 2.0
+        self.q2 = q2
         self.target_fraction = target_fraction
         self.in_features = in_features
         self.out_features = out_features
@@ -84,12 +86,14 @@ class GroupBridgeoutFcLayer(Module):
             outS = self.weight.size()[1]
             
             input_x = input_x.view(bS,1,inpS)
+            # not sure why this 1e-15 is needed? but lstm models are giving nans for q < 2 without it
+          
             if not self.use_same_mask:
                 w = self.weight.expand(bS, inpS, outS)
-                wq = torch.norm(w, 2, dim=2).pow( self.q ).unsqueeze(2)
+                wq = torch.norm(w, self.q2, dim=2).add(1e-15).pow( self.q ).unsqueeze(2)
             else:
                 w = self.weight
-                wq = torch.norm(w, 2, dim=1).pow( self.q ).unsqueeze(1)
+                wq = torch.norm(w, self.q2, dim=1).add(1e-15).pow( self.q ).unsqueeze(1)
             
             noise = w.data.clone()
             noise.bernoulli_(1 - self.p, generator=self.rand_gen).div_(1 - self.p).sub_(1)
@@ -127,7 +131,7 @@ class GroupBridgeoutFcLayer(Module):
 
 if __name__ == '__main__':
 #     functional_testing()
-    b = GroupBridgeoutFcLayer(2,4, batch_mask=True).double()
+    b = GroupBridgeoutFcLayer(2,4, q1=2, q2=2, batch_mask=True).double()
     x = Variable(torch.ones(5, 2).double(), requires_grad=True)
     y = b(x)
     y.backward(torch.ones(y.size()).double())
