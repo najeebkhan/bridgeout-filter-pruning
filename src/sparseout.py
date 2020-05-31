@@ -3,9 +3,9 @@ from torch.autograd import Variable
 from torch.nn.modules import Module
 
 import torch
-EPSILON=1E-32
+EPSILON=1E-18
 class Sparseout(InplaceFunction):
-    
+
     @staticmethod
     def _make_noise(input):
         return input.new().resize_as_(input)
@@ -26,7 +26,7 @@ class Sparseout(InplaceFunction):
         ctx.train = train
         ctx.inplace = inplace
         ctx.input = input_x
-        
+
         if ctx.inplace:
             ctx.mark_dirty(input_x)
             output = input_x
@@ -40,19 +40,31 @@ class Sparseout(InplaceFunction):
                 ctx.perturbation = ctx.noise
             else:
                 ctx.noise.bernoulli_(1 - ctx.p, generator=rand_gen).div_(1 - ctx.p).sub_(1)
-                ctx.perturbation = input_x.abs().pow((ctx.q)/2.0).mul(ctx.noise)
-            
+                ctx.perturbation = input_x.abs().add(EPSILON).pow((ctx.q)/2.0).mul(ctx.noise)
+
+#             output_shape = weight.size()[0]
+#             weight_flattened = weight.view([output_shape, -1])
+#             feature_shape = weight_flattened.size()[1]
+#             n_weights_to_drop = int(feature_shape*fraction)
+#             weight_flattened_abs = torch.abs(weight_flattened)
+#             sorted_indices_per_column = torch.argsort(weight_flattened_abs, dim=0)
+#             nth_ranked_weight_value_per_column = weight_flattened_abs.gather(0,sorted_indices_per_column)[:,n_weights_to_drop].view([-1,1])
+#             mask = weight_flattened_abs.ge(nth_ranked_weight_value_per_column)
+#             weight_flattened.mul_(mask.float())
+
             if target_fraction < 1.0:
                 input_shape = input_x.size()
-                input_flattened_abs = torch.abs(input_x.view([input_shape[0], -1]))
-                sorted_indices = torch.argsort(input_flattened_abs, dim=1)
-                n = int(sorted_indices.size()[1]*target_fraction)
-                threshold_values = input_flattened_abs.gather(1,sorted_indices)[:,n].view([-1,1])
-                ctx.targeting_mask = input_flattened_abs.le(threshold_values).view(input_shape).type(input_x.dtype)
+                batch_size = input_shape[0]
+                input_flattened_abs = torch.abs(input_x.view([batch_size, -1]))
+                feature_shape = input_flattened_abs.size()[1]
+                n_features_to_drop = int(feature_shape*target_fraction)
+                sorted_indices_per_column = torch.argsort(input_flattened_abs, dim=0)
+                nth_ranked_feature_value_per_column = input_flattened_abs.gather(0,sorted_indices_per_column)[:,n_features_to_drop].view([-1,1])
+
+                ctx.targeting_mask = input_flattened_abs.le(nth_ranked_feature_value_per_column).view(input_shape).type(input_x.dtype)
                 ctx.perturbation.mul_(ctx.targeting_mask)
-                        
             output.add_(ctx.perturbation)
-            
+
         return output
 
     @staticmethod
@@ -64,7 +76,7 @@ class Sparseout(InplaceFunction):
                 tmp = tmp.mul(torch.sign(ctx.input))
                 if hasattr(ctx, 'targeting_mask'):
                     tmp = tmp.mul(ctx.targeting_mask)
-                tmp = tmp.add(1.)                
+                tmp = tmp.add(1.)
             return grad_output.mul(Variable(tmp)), None, None, None, None, None, None
         else:
             return grad_output, None, None, None, None, None, None
@@ -131,29 +143,36 @@ class SO(Module):
 
 if __name__ == '__main__':
     x = torch.tensor([[ 0.3439, -0.9], [ -0.439, -1.3], [ 0.9, 0.6]], dtype=torch.double,requires_grad=True)
-    
+
     x = torch.tensor(
     [[[  -3.57467946,   79.54927123,  -96.96720696,  157.74728225, -29.54584318],
                     [ -55.80235766,   47.82568919,   -1.29289683,  -58.98199797, -69.96299468],
                     [ 247.83942718,  108.32906629,  -59.86555402,  135.34271468, 19.68149787]],
                     [[ -78.29762493,  266.53211911,  -43.77736142, -144.96562926, 28.569716  ],
                      [-115.58819161,  -74.86650242,  -47.24648197, -114.06854625, -88.20043568],
-                     [-130.0732679 , -121.55034213,  202.51414356, -271.76901139, 8.93043837]]], 
+                     [-130.0732679 , -121.55034213,  202.51414356, -271.76901139, 8.93043837]]],
     dtype=torch.double,requires_grad=True)
-    
-    so = SO(0.5, 1.0, 0.05, unit_test_mode=False)
-    
+
+    x = torch.tensor([[ 10.,   3,   2,  23,   1],
+        [  0,   1,   2,   2,   9],
+        [200,  31,   5,   0,   8],
+        [  9,   1,   0,  10,   2]], dtype=torch.float)
+
+    so = SO(0.5, 1.0, target_fraction=0.3, unit_test_mode=False)
+    print(x)
+
     y = so(x.float())
-    print('x-y\n', x.float()-y)
-    print('x\n', x.int())
-    y.backward(torch.ones(y.size()).float(), retain_graph=True)
-    print('y',y)
-    print('-----x.grad', x.grad)
-#     
+    print(y-x.float())
+#     print('x-y\n', x.float()-y)
+#     print('x\n', x.int())
+#     y.backward(torch.ones(y.size()).float(), retain_graph=True)
+#     print('y',y)
+#     print('-----x.grad', x.grad)
+#
 #     x.grad.data.zero_()
 #     y = so(x)
 #     y.backward(torch.tensor([0,1]).double())
 #     print('y',y)
 #     print('-----x.grad', x.grad)
-    
+
 

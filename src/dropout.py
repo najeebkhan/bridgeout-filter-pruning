@@ -38,12 +38,14 @@ class Dropout(InplaceFunction):
             
             if target_fraction < 1.0:
                 input_shape = input_x.size()
-                input_flattened_abs = torch.abs(input_x.view([input_shape[0], -1]))
-                sorted_indices = torch.argsort(input_flattened_abs, dim=1)
-                n = int(sorted_indices.size()[1]*target_fraction)
-                threshold_values = input_flattened_abs.gather(1,sorted_indices)[:,n].view([-1,1])
-                targetting_mask = input_flattened_abs.le(threshold_values).view(input_shape)
-                ctx.noise = ctx.noise.where(targetting_mask, torch.tensor([1.0]).type(input_x.dtype).to(input_x.device))            
+                batch_size = input_shape[0]                
+                input_flattened_abs = torch.abs(input_x.view([batch_size, -1]))                                
+                feature_shape = input_flattened_abs.size()[1]
+                n_features_to_drop = int(feature_shape*target_fraction)
+                sorted_indices_per_column = torch.argsort(input_flattened_abs, dim=0)
+                nth_ranked_feature_value_per_column = input_flattened_abs.gather(0,sorted_indices_per_column)[:,n_features_to_drop].view([-1,1])
+                targeting_mask = input_flattened_abs.le(nth_ranked_feature_value_per_column).view(input_shape)
+                ctx.noise = ctx.noise.where(targeting_mask, torch.tensor([1.0]).type(input_x.dtype).to(input_x.device))            
             output.mul_(ctx.noise)
         return output
 
@@ -124,14 +126,27 @@ if __name__ == '__main__':
                      [-130.0732679 , -121.55034213,  202.51414356, -271.76901139, 8.93043837]]], 
     dtype=torch.double,requires_grad=True)
     
-    so = DO(0.25, target_fraction=0.25, unit_test_mode=False)
-    do = torch.nn.Dropout(0.25)
-    
+    x = torch.tensor([[ 10.,   3,   2,  23,   1],
+        [  0,   1,   2,   2,   9],
+        [200,  31,   5,   0,   8],
+        [  9,   1,   0,  10,   2]], dtype=torch.float)
+
+    so = DO(0.5, target_fraction=0.5, unit_test_mode=False)
+    print(x)
+
     y = so(x.float())
-    y.backward(torch.ones(y.size()).float(), retain_graph=True)
+    print(y)
     
-    print('x-y\n', y-x.float())
-    print('x\n', x.int())
+    
+    
+#     so = DO(0.25, target_fraction=0.25, unit_test_mode=False)
+#     do = torch.nn.Dropout(0.25)
+#     
+#     y = so(x.float())
+#     y.backward(torch.ones(y.size()).float(), retain_graph=True)
+#     
+#     print('x-y\n', y-x.float())
+#     print('x\n', x.int())
     
     
 #     y = do(x.float())
