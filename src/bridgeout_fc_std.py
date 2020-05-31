@@ -6,6 +6,7 @@ from torch.nn import functional as F
 from torch.nn import init
 from torch.nn import Module
 from sto_reg.src.sparseout import SO
+from sto_reg.src.dropout import DO
 
 
 class Identity(Module):
@@ -78,7 +79,12 @@ class BridgeoutFCLayer(Module):
         self.p = p
         self.q = q
         self.tf=target_fraction
-        self.dropout = SO(self.p, self.q, self.tf)
+        
+        if q:
+            self.dropout = SO(p=p, q=q, target_fraction=target_fraction, unit_test_mode=unit_test_mode)
+        elif p:
+            self.dropout = DO(p=p, target_fraction=target_fraction, unit_test_mode=unit_test_mode)
+        
         self.reset_parameters()
 
     def reset_parameters(self):
