@@ -41,10 +41,12 @@ class Dropout(InplaceFunction):
                 batch_size = input_shape[0]                
                 input_flattened_abs = torch.abs(input_x.view([batch_size, -1]))                                
                 feature_shape = input_flattened_abs.size()[1]
+                
                 n_features_to_drop = int(feature_shape*target_fraction)
-                sorted_indices_per_column = torch.argsort(input_flattened_abs, dim=0)
-                nth_ranked_feature_value_per_column = input_flattened_abs.gather(0,sorted_indices_per_column)[:,n_features_to_drop].view([-1,1])
-                targeting_mask = input_flattened_abs.le(nth_ranked_feature_value_per_column).view(input_shape)
+                sorted_indices_per_column = torch.argsort(input_flattened_abs, dim=1)
+                nth_ranked_feature_value_per_column = input_flattened_abs.gather(1,sorted_indices_per_column)[:,n_features_to_drop].view([-1,1])
+                targeting_mask = input_flattened_abs.lt(nth_ranked_feature_value_per_column).view(input_shape)
+                print(targeting_mask)
                 ctx.noise = ctx.noise.where(targeting_mask, torch.tensor([1.0]).type(input_x.dtype).to(input_x.device))            
             output.mul_(ctx.noise)
         return output
@@ -130,8 +132,9 @@ if __name__ == '__main__':
         [  0,   1,   2,   2,   9],
         [200,  31,   5,   0,   8],
         [  9,   1,   0,  10,   2]], dtype=torch.float)
-
-    so = DO(0.5, target_fraction=0.5, unit_test_mode=False)
+    x = torch.rand(3,10)
+    
+    so = DO(0.5, target_fraction=0.65, unit_test_mode=False)
     print(x)
 
     y = so(x.float())
