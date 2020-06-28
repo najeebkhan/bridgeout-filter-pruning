@@ -3,7 +3,7 @@ from torch.autograd import Variable
 from torch.nn.modules import Module
 
 import torch
-EPSILON=1E-32
+EPSILON=1E-12
 class Sparseout(InplaceFunction):
     
     @staticmethod
@@ -40,7 +40,7 @@ class Sparseout(InplaceFunction):
                 ctx.perturbation = ctx.noise
             else:
                 ctx.noise.bernoulli_(1 - ctx.p, generator=rand_gen).div_(1 - ctx.p).sub_(1)
-                ctx.perturbation = input_x.abs().pow((ctx.q)/2.0).mul(ctx.noise)
+                ctx.perturbation = input_x.abs().add(EPSILON).pow((ctx.q)/2.0).mul(ctx.noise)
             
             if target_fraction < 1.0:
                 input_shape = input_x.size()
