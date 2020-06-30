@@ -1,5 +1,5 @@
 import torch
-
+import math
 
 class MagnitudePruner:
     def __init__(self, exclude_final=True):
@@ -47,26 +47,49 @@ class MagnitudePrunerLayers:
         weights = []
         for param_name, param in net.named_parameters():
             if MagnitudePrunerLayers.is_param_weight_and_not_bias(param_name, eligible_layers):
+#                 print('added to pruning list ', param_name )
                 weights.append(param)
         return weights
     
     @staticmethod
     def apply(net, fraction, eligible_layers):
         weights = MagnitudePrunerLayers.get_eligible_params(net, eligible_layers)
+#         print('Before pruning: fraction of non-zeros')
+#         print('*'*80)
+#         print(MagnitudePrunerLayers.get_non_zero_fraction(net, eligible_layers))
+#         print('*'*80)
+        
         with torch.no_grad():
             for weight in weights:
                 MagnitudePrunerLayers.prune(weight, fraction)
+        
+#         print('After pruning: fraction of non-zeros')
+#         print('*'*80)
+#         print(MagnitudePrunerLayers.get_non_zero_fraction(net, eligible_layers))
+#         print('*'*80)
                 
     @staticmethod
-    def prune(weight, fraction):
-            w_shape = weight.size()
-            weight_flattened = weight.view([w_shape[0], -1])
-            weight_flattened_abs = torch.abs(weight_flattened)
-            sorted_indices = torch.argsort(weight_flattened_abs, dim=1)
-            n = int(sorted_indices.size()[1]*fraction)
-            threshold_values = weight_flattened_abs.gather(1,sorted_indices)[:,n].view([-1,1])
-            mask = weight_flattened_abs.ge(threshold_values)
-            weight_flattened.mul_(mask.float())
+    def prune(weight, fraction):        
+        w_shape = weight.size()
+        weight_flattened = weight.view([w_shape[0], -1])
+        weight_flattened_abs = torch.abs(weight_flattened)
+        sorted_indices = torch.argsort(weight_flattened_abs, dim=1)
+#         print('sorted_indices.size()[1]', sorted_indices.size()[1])
+#         print('sorted_indices.size()[1]*fraction', sorted_indices.size()[1]*fraction)
+        n = math.floor(sorted_indices.size()[1]*fraction)
+#         print('n', n)
+        threshold_values = weight_flattened_abs.gather(1,sorted_indices)[:,n].view([-1,1])
+        mask = weight_flattened_abs.ge(threshold_values)
+#         print('mask.size()', mask.size())
+        weight_flattened.mul_(mask.float())
+    
+    @staticmethod
+    def get_non_zero_fraction(net, eligible_layers):
+        non_zero_count = {}
+        for param_name, param in net.named_parameters():
+            if MagnitudePrunerLayers.is_param_weight_and_not_bias(param_name, eligible_layers):
+                non_zero_count[param_name] = param[torch.abs(param)>0].size()[0]#/param.numel()
+        return non_zero_count
 
 
 class MagnitudePrunerLSTM:
