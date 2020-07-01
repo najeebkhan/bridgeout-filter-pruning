@@ -42,17 +42,35 @@ class Sparseout(InplaceFunction):
                 ctx.noise.bernoulli_(1 - ctx.p, generator=rand_gen).div_(1 - ctx.p).sub_(1)
                 ctx.perturbation = input_x.abs().add(EPSILON).pow((ctx.q)/2.0).mul(ctx.noise)
 
+
+            is_filter_map = False
+            if input_x.dim() > 3:
+                is_filter_map = True
+
+
             if target_fraction < 1.0:
-                input_shape = input_x.size()
-                batch_size = input_shape[0]
-                input_flattened_abs = torch.abs(input_x.view([batch_size, -1]))
-                feature_shape = input_flattened_abs.size()[1]
-                n_features_to_drop = int(feature_shape*target_fraction)
-                 
-                sorted_indices_per_row = torch.argsort(input_flattened_abs, dim=1)
-                nth_ranked_feature_value_per_row = input_flattened_abs.gather(1,sorted_indices_per_row)[:,n_features_to_drop].view([-1,1])
-  
-                ctx.targeting_mask = input_flattened_abs.lt(nth_ranked_feature_value_per_row).view(input_shape).type(input_x.dtype)
+                if not is_filter_map:
+                    # please excuse the naming, batch_size in this case is just the output dimension of the filter
+                    input_shape = input_x.size()
+                    batch_size = input_shape[0]
+                    input_flattened_abs = torch.abs(input_x.view([batch_size, -1]))
+                    feature_shape = input_flattened_abs.size()[1]
+                    n_features_to_drop = int(feature_shape*target_fraction)
+                    sorted_indices_per_row = torch.argsort(input_flattened_abs, dim=1)
+                    nth_ranked_feature_value_per_row = input_flattened_abs.gather(1,sorted_indices_per_row)[:,n_features_to_drop].view([-1,1])
+                    ctx.targeting_mask = input_flattened_abs.lt(nth_ranked_feature_value_per_row).view(input_shape).type(input_x.dtype)
+                    # del input_flattened_abs
+                    # torch.cuda.empty_cache()
+                else: # special case when activation maps are passed in
+                    batch_size, num_filters, width, height  = input_x.size()
+                    input_flattened_abs = torch.norm(input_x.view([batch_size, num_filters, -1]), 2, dim=2)
+                    feature_shape = input_flattened_abs.size()[1]
+                    n_features_to_drop = int(feature_shape*target_fraction)
+                    sorted_indices_per_row = torch.argsort(input_flattened_abs, dim=1)
+                    nth_ranked_feature_value_per_row = input_flattened_abs.gather(1,sorted_indices_per_row)[:,n_features_to_drop].view([-1,1])
+                    ctx.targeting_mask = input_flattened_abs.lt(nth_ranked_feature_value_per_row).type(input_x.dtype)[:,:,None,None]
+                    # del input_flattened_abs
+                    # torch.cuda.empty_cache()
                 ctx.perturbation.mul_(ctx.targeting_mask)
             output.add_(ctx.perturbation)
         return output
@@ -100,9 +118,9 @@ class SO(Module):
 
     Examples::
 
-        >>> m = nn.Dropout(p=0.2)
-        >>> input = autograd.Variable(torch.randn(20, 16))
-        >>> output = m(input)
+        # >>> m = nn.Dropout(p=0.2)
+        # >>> input = autograd.Variable(torch.randn(20, 16))
+        # >>> output = m(input)
 
     .. _Improving neural networks by preventing co-adaptation of feature
         detectors: https://arxiv.org/abs/1207.0580
@@ -132,30 +150,22 @@ class SO(Module):
 
 
 if __name__ == '__main__':
-    x = torch.tensor([[ 0.3439, -0.9], [ -0.439, -1.3], [ 0.9, 0.6]], dtype=torch.double,requires_grad=True)
-
-    x = torch.tensor(
-    [[[  -3.57467946,   79.54927123,  -96.96720696,  157.74728225, -29.54584318],
-                    [ -55.80235766,   47.82568919,   -1.29289683,  -58.98199797, -69.96299468],
-                    [ 247.83942718,  108.32906629,  -59.86555402,  135.34271468, 19.68149787]],
-                    [[ -78.29762493,  266.53211911,  -43.77736142, -144.96562926, 28.569716  ],
-                     [-115.58819161,  -74.86650242,  -47.24648197, -114.06854625, -88.20043568],
-                     [-130.0732679 , -121.55034213,  202.51414356, -271.76901139, 8.93043837]]],
-    dtype=torch.double,requires_grad=True)
-    x = torch.rand(3,10)*1000
-
-#     x = torch.tensor([[ 10.,   3,   2,  23,   1],
-#         [  0,   1,   2,   2,   9],
-#         [200,  31,   5,   0,   8],
-#         [  9,   1,   0,  10,   2]], dtype=torch.float)
-
-    so = SO(0.5, 1.0, target_fraction=0.34, unit_test_mode=False)
-    print(x)
-
+    x = torch.rand(4,6, 2, 2)*1000
+    so = SO(0.5, 1.0, target_fraction=0.67, unit_test_mode=False)
+    # print(x)
     y = so(x.float())
-    
+
     res = y-x.float()
     print(res.int())
+    print('In the above out of 6, 4 activation maps are targeted.')
+    print('*'*80)
+
+    x = torch.rand(4, 3, 3)*1000
+    y = so(x.float())
+
+    res = y-x.float()
+    print(res.int())
+    print('In the above 2/3 of each 3x3 kernel is targeted')
 #     print('x-y\n', x.float()-y)
 #     print('x\n', x.int())
 #     y.backward(torch.ones(y.size()).float(), retain_graph=True)

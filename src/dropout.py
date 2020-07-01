@@ -35,25 +35,45 @@ class Dropout(InplaceFunction):
                 ctx.noise.fill_(0)
             else:
                 ctx.noise.bernoulli_(1 - ctx.p, generator=rand_gen).div_(1 - ctx.p)
-            
+
+            is_filter_map = False
+            if input_x.dim() > 3:
+                is_filter_map = True
+
             if target_fraction < 1.0:
-                input_shape = input_x.size()
-                batch_size = input_shape[0]                
-                input_flattened_abs = torch.abs(input_x.view([batch_size, -1]))                                
-                feature_shape = input_flattened_abs.size()[1]
-                
-                n_features_to_drop = int(feature_shape*target_fraction)
-                sorted_indices_per_column = torch.argsort(input_flattened_abs, dim=1)
-                nth_ranked_feature_value_per_column = input_flattened_abs.gather(1,sorted_indices_per_column)[:,n_features_to_drop].view([-1,1])
-                targeting_mask = input_flattened_abs.lt(nth_ranked_feature_value_per_column).view(input_shape)
-                print(targeting_mask)
-                ctx.noise = ctx.noise.where(targeting_mask, torch.tensor([1.0]).type(input_x.dtype).to(input_x.device))            
+                if is_filter_map:
+                    input_shape = input_x.size()
+                    batch_size = input_shape[0]
+                    num_filters = input_shape[1]
+
+                    input_flattened_abs = torch.norm(input_x.view([batch_size, num_filters, -1]), 2, dim=2)
+                    feature_shape = input_flattened_abs.size()[1]
+
+                    n_features_to_drop = int(feature_shape*target_fraction)
+                    sorted_indices_per_row = torch.argsort(input_flattened_abs, dim=1)
+                    nth_ranked_feature_value_per_row = input_flattened_abs.gather(1,sorted_indices_per_row)[:,n_features_to_drop].view([-1,1])
+                    targeting_mask = input_flattened_abs.lt(nth_ranked_feature_value_per_row)[:,:,None,None] # .view(input_shape)
+                    # print('targeting_mask',targeting_mask)
+                    ctx.noise = ctx.noise.where(targeting_mask, torch.tensor([1.0]).type(input_x.dtype).to(input_x.device))
+                else:
+                    input_shape = input_x.size()
+                    batch_size = input_shape[0]
+                    input_flattened_abs = torch.abs(input_x.view([batch_size, -1]))
+                    feature_shape = input_flattened_abs.size()[1]
+
+                    n_features_to_drop = int(feature_shape*target_fraction)
+                    sorted_indices_per_column = torch.argsort(input_flattened_abs, dim=1)
+                    nth_ranked_feature_value_per_column = input_flattened_abs.gather(1,sorted_indices_per_column)[:,n_features_to_drop].view([-1,1])
+                    targeting_mask = input_flattened_abs.lt(nth_ranked_feature_value_per_column).view(input_shape)
+                    print(targeting_mask)
+                    ctx.noise = ctx.noise.where(targeting_mask, torch.tensor([1.0]).type(input_x.dtype).to(input_x.device))
+
             output.mul_(ctx.noise)
         return output
 
     @staticmethod
     def backward(ctx, grad_output):
-        if ctx.p > 0 and ctx.train:          
+        if ctx.p > 0 and ctx.train:
             return grad_output.mul(Variable(ctx.noise)), None, None, None, None, None
         else:
             return grad_output, None, None, None, None, None
@@ -86,10 +106,10 @@ class DO(Module):
         - Output: `Same`. Output is of the same shape as input
 
     Examples::
-
-        >>> m = nn.Dropout(p=0.2)
-        >>> input = autograd.Variable(torch.randn(20, 16))
-        >>> output = m(input)
+        #
+        # >>> m = nn.Dropout(p=0.2)
+        # >>> input = autograd.Variable(torch.randn(20, 16))
+        # >>> output = m(input)
 
     .. _Improving neural networks by preventing co-adaptation of feature
         detectors: https://arxiv.org/abs/1207.0580
@@ -117,28 +137,44 @@ class DO(Module):
 
 
 if __name__ == '__main__':
-    x = torch.tensor([[ 0.3439, -0.9], [ -0.439, -1.3], [ 0.9, 0.6]], dtype=torch.double,requires_grad=True)
-    
-    x = torch.tensor(
-    [[[  -3.57467946,   79.54927123,  -96.96720696,  157.74728225, -29.54584318],
-                    [ -55.80235766,   47.82568919,   -1.29289683,  -58.98199797, -69.96299468],
-                    [ 247.83942718,  108.32906629,  -59.86555402,  135.34271468, 19.68149787]],
-                    [[ -78.29762493,  266.53211911,  -43.77736142, -144.96562926, 28.569716  ],
-                     [-115.58819161,  -74.86650242,  -47.24648197, -114.06854625, -88.20043568],
-                     [-130.0732679 , -121.55034213,  202.51414356, -271.76901139, 8.93043837]]], 
-    dtype=torch.double,requires_grad=True)
-    
-    x = torch.tensor([[ 10.,   3,   2,  23,   1],
-        [  0,   1,   2,   2,   9],
-        [200,  31,   5,   0,   8],
-        [  9,   1,   0,  10,   2]], dtype=torch.float)
-    x = torch.rand(3,10)
-    
-    so = DO(0.5, target_fraction=0.65, unit_test_mode=False)
-    print(x)
+    # x = torch.tensor([[ 0.3439, -0.9], [ -0.439, -1.3], [ 0.9, 0.6]], dtype=torch.double,requires_grad=True)
+    #
+    # x = torch.tensor(
+    # [[[  -3.57467946,   79.54927123,  -96.96720696,  157.74728225, -29.54584318],
+    #                 [ -55.80235766,   47.82568919,   -1.29289683,  -58.98199797, -69.96299468],
+    #                 [ 247.83942718,  108.32906629,  -59.86555402,  135.34271468, 19.68149787]],
+    #                 [[ -78.29762493,  266.53211911,  -43.77736142, -144.96562926, 28.569716  ],
+    #                  [-115.58819161,  -74.86650242,  -47.24648197, -114.06854625, -88.20043568],
+    #                  [-130.0732679 , -121.55034213,  202.51414356, -271.76901139, 8.93043837]]],
+    # dtype=torch.double,requires_grad=True)
+    #
+    # x = torch.tensor([[ 10.,   3,   2,  23,   1],
+    #     [  0,   1,   2,   2,   9],
+    #     [200,  31,   5,   0,   8],
+    #     [  9,   1,   0,  10,   2]], dtype=torch.float)
+    # x = torch.rand(3,10)
+    #
+    # so = DO(0.5, target_fraction=0.65, unit_test_mode=False)
+    # print(x)
+    #
+    # y = so(x.float())
+    # print(y)
 
-    y = so(x.float())
-    print(y)
+    x = torch.rand(4,6, 2, 2)*1000
+    do = DO(1.0, target_fraction=0.67, unit_test_mode=False)
+    # print(x)
+    y = do(x.float())
+
+    print(y.int())
+    print('In the above out of 6, 4 activation maps are targeted.')
+    print('*'*80)
+
+    x = torch.rand(4, 3, 3)*1000
+    y = do(x.float())
+
+    print(y.int())
+    print('In the above 2/3 of each 3x3 kernel is targeted')
+
     
     
     
